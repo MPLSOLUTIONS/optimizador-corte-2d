@@ -269,34 +269,41 @@ main { flex: 1; }
   gap: 10px;
 }
 .btn-heuristic, .btn-optimal {
-  padding: 11px 8px;
-  border: none;
+  padding: 14px 10px 12px;
   border-radius: var(--radius-sm);
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.85rem; font-weight: 600;
+  font-size: 0.88rem; font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  transition: all 0.18s;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
   letter-spacing: 0.01em;
+  line-height: 1.2;
 }
 .btn-heuristic {
   background: var(--surface2);
   color: var(--navy);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
 }
-.btn-heuristic:hover { background: var(--gold-pale); border-color: var(--gold); }
+.btn-heuristic:hover:not(:disabled) {
+  background: var(--gold-pale);
+  border-color: var(--gold);
+  color: var(--navy);
+}
 .btn-optimal {
   background: var(--navy);
   color: var(--white);
-  border: 1px solid transparent;
+  border: 1.5px solid var(--navy);
 }
-.btn-optimal:hover { background: var(--navy-mid); }
-.btn-heuristic:active, .btn-optimal:active { transform: scale(0.97); }
-.btn-heuristic:disabled, .btn-optimal:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-optimal:hover:not(:disabled) { background: var(--navy-light); border-color: var(--navy-light); }
+.btn-heuristic:active:not(:disabled),
+.btn-optimal:active:not(:disabled)  { transform: scale(0.97); }
+.btn-heuristic:disabled,
+.btn-optimal:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-sub {
-  font-size: 0.66rem; font-weight: 400;
-  opacity: 0.65; letter-spacing: 0.03em;
+  font-size: 0.67rem; font-weight: 400;
+  opacity: 0.60; letter-spacing: 0.04em;
   text-transform: uppercase;
+  font-family: 'DM Mono', monospace;
 }
 
 /* Status */
