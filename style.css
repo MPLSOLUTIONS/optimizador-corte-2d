@@ -262,23 +262,42 @@ main { flex: 1; }
 }
 .checkbox-row input[type=checkbox] { accent-color: var(--gold); width: 15px; height: 15px; }
 
-/* Solve button */
-.btn-solve {
-  width: 100%;
-  padding: 13px;
-  background: var(--navy);
-  color: var(--white);
+/* Dual solve buttons */
+.btn-dual {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.btn-heuristic, .btn-optimal {
+  padding: 11px 8px;
   border: none;
   border-radius: var(--radius-sm);
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.95rem; font-weight: 600;
+  font-size: 0.85rem; font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s, transform 0.1s;
-  letter-spacing: 0.02em;
+  transition: all 0.2s;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  letter-spacing: 0.01em;
 }
-.btn-solve:hover { background: var(--navy-mid); }
-.btn-solve:active { transform: scale(0.98); }
-.btn-solve:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.btn-heuristic {
+  background: var(--surface2);
+  color: var(--navy);
+  border: 1px solid var(--border);
+}
+.btn-heuristic:hover { background: var(--gold-pale); border-color: var(--gold); }
+.btn-optimal {
+  background: var(--navy);
+  color: var(--white);
+  border: 1px solid transparent;
+}
+.btn-optimal:hover { background: var(--navy-mid); }
+.btn-heuristic:active, .btn-optimal:active { transform: scale(0.97); }
+.btn-heuristic:disabled, .btn-optimal:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-sub {
+  font-size: 0.66rem; font-weight: 400;
+  opacity: 0.65; letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
 
 /* Status */
 .status-bar {

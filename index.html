@@ -110,7 +110,16 @@
         </label>
       </section>
 
-      <button class="btn-solve" id="btnSolve">Optimizar cortes</button>
+      <div class="btn-dual">
+        <button class="btn-heuristic" id="btnHeuristic" title="Resultado inmediato (~1s). MAXRECTS greedy, sin garantía de óptimo global.">
+          ⚡ Heurístico
+          <span class="btn-sub">~1 segundo</span>
+        </button>
+        <button class="btn-optimal" id="btnOptimal" title="Óptimo global garantizado. MILP + HiGHS vía Pyodide (~10-60s).">
+          🎯 Óptimo global
+          <span class="btn-sub">MILP · HiGHS</span>
+        </button>
+      </div>
       <div class="status-bar" id="statusBar"></div>
 
     </aside>
