@@ -293,10 +293,32 @@ function generatePatterns2D(sheetW, sheetH, kerf, pieces, allowRotation) {
   const demand   = pieces.map(p => p.qty);
   const seen     = new Set();
 
+  // Verifica si alguna pieza cabe en algún rectángulo libre
+  function canPlaceAnything(freeRects, counts) {
+    for (const fr of freeRects) {
+      for (let i = 0; i < pieces.length; i++) {
+        if (counts[i] >= demand[i]) continue;
+        const p  = pieces[i];
+        const pw = p.w + kerf;
+        const ph = p.h + kerf;
+        if ((pw <= fr.w + 0.001 && ph <= fr.h + 0.001)) return true;
+        if (allowRotation && p.w !== p.h &&
+            ph <= fr.w + 0.001 && pw <= fr.h + 0.001) return true;
+      }
+    }
+    return false;
+  }
+
   function dfs(freeRects, placements, counts, depth) {
     if (patterns.length >= MAX_PATTERNS) return;
 
-    if (placements.length > 0) {
+    // Solo guardar patrón cuando es MAXIMAL:
+    // no cabe ninguna pieza más de la demanda pendiente.
+    // Esto evita patrones "pequeños" que inflan el MILP
+    // y hacen que use más láminas de las necesarias.
+    const isMaximal = placements.length > 0 && !canPlaceAnything(freeRects, counts);
+
+    if (isMaximal) {
       const sig = placements.map(pl =>
         `${pl.pieceIdx},${pl.x},${pl.y},${pl.rotated ? 1 : 0}`
       ).join('|');
@@ -307,12 +329,29 @@ function generatePatterns2D(sheetW, sheetH, kerf, pieces, allowRotation) {
           counts: [...counts]
         });
       }
+      return; // maximal → no seguir expandiendo esta rama
     }
 
-    if (depth >= MAX_DEPTH || freeRects.length === 0) return;
+    if (depth >= MAX_DEPTH || freeRects.length === 0) {
+      // Guardar igual si tiene piezas (caso borde: profundidad límite)
+      if (placements.length > 0) {
+        const sig = placements.map(pl =>
+          `${pl.pieceIdx},${pl.x},${pl.y},${pl.rotated ? 1 : 0}`
+        ).join('|');
+        if (!seen.has(sig)) {
+          seen.add(sig);
+          patterns.push({
+            placements: placements.map(p => ({ ...p })),
+            counts: [...counts]
+          });
+        }
+      }
+      return;
+    }
 
-    // Explorar espacios libres de menor a mayor (espacios ajustados primero)
-    const sortedFR = [...freeRects].sort((a, b) => a.w * a.h - b.w * b.h);
+    // Explorar: espacios libres de mayor a menor área
+    // (preferir espacios grandes → patrones más llenos)
+    const sortedFR = [...freeRects].sort((a, b) => b.w * b.h - a.w * a.h);
     const tried    = new Set();
 
     for (const fr of sortedFR) {
@@ -335,7 +374,7 @@ function generatePatterns2D(sheetW, sheetH, kerf, pieces, allowRotation) {
           const newPlacements = [...placements, {
             pieceIdx: i,
             x: fr.x, y: fr.y,
-            w: rot ? p.h : p.w,  // visual sin kerf
+            w: rot ? p.h : p.w,
             h: rot ? p.w : p.h,
             rotated: rot
           }];
@@ -385,6 +424,23 @@ def solve(patterns_json, demand_json, max_sheets):
     Av   = A[:, valid]
     pv   = [patterns[j] for j in valid]
     nv   = len(valid)
+
+    # Eliminar patrones dominados: si patrón a tiene >= piezas
+    # que patrón b en todos los tipos, b nunca será preferido.
+    # Esto reduce el tamaño del MILP y mejora la solución.
+    dominated = set()
+    for ja in range(nv):
+        for jb in range(nv):
+            if ja == jb or jb in dominated: continue
+            # ¿a domina a b?
+            if all(Av[i, ja] >= Av[i, jb] for i in range(n_pieces)):
+                dominated.add(jb)
+    keep = [j for j in range(nv) if j not in dominated]
+    if not keep:
+        keep = list(range(nv))
+    Av = Av[:, keep]
+    pv = [pv[j] for j in keep]
+    nv = len(keep)
 
     # MILP: min sum(x_j)  s.t.  A @ x >= demand,  x entero >= 0
     c    = np.ones(nv)
