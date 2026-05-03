@@ -415,49 +415,23 @@ def solve(patterns_json, demand_json, max_sheets):
         for i, cnt in enumerate(pat["counts"]):
             A[i, j] = cnt
 
-    # Solo patrones que no superen la demanda en ningún tipo
+    # Filtrar patrones que excedan la demanda en algún tipo
+    # (no tiene sentido usar un patrón que pide más de lo que necesitamos)
     valid = [j for j in range(n_patterns)
              if all(A[i,j] <= demand[i] for i in range(n_pieces))]
     if not valid:
         valid = list(range(n_patterns))
 
-    Av   = A[:, valid]
-    pv   = [patterns[j] for j in valid]
-    nv   = len(valid)
+    Av = A[:, valid]
+    pv = [patterns[j] for j in valid]
+    nv = len(valid)
 
-    # Eliminar patrones dominados: si patrón a tiene >= piezas
-    # que patrón b en todos los tipos, b nunca será preferido.
-    # Esto reduce el tamaño del MILP y mejora la solución.
-    dominated = set()
-    for ja in range(nv):
-        for jb in range(nv):
-            if ja == jb or jb in dominated: continue
-            # ¿a domina a b?
-            if all(Av[i, ja] >= Av[i, jb] for i in range(n_pieces)):
-                dominated.add(jb)
-    keep = [j for j in range(nv) if j not in dominated]
-    if not keep:
-        keep = list(range(nv))
-    Av = Av[:, keep]
-    pv = [pv[j] for j in keep]
-    nv = len(keep)
-
-    # MILP: min sum(x_j)  s.t.  A @ x >= demand,  x entero >= 0
-    # Bound superior ajustado: cada patrón se usa a lo sumo
-    # ceil(max_demand / max_coverage_that_pattern_provides)
-    import math
-    ub_per_pattern = []
-    for j in range(nv):
-        max_uses = max_sheets
-        for i in range(n_pieces):
-            if Av[i, j] > 0:
-                max_uses = min(max_uses, math.ceil(demand[i] / Av[i, j]))
-        ub_per_pattern.append(max_uses)
-    ub_arr = np.array(ub_per_pattern, dtype=float)
-
-    c    = np.ones(nv)
-    con  = LinearConstraint(Av, lb=np.array(demand, dtype=float), ub=np.inf)
-    bnd  = Bounds(lb=0, ub=ub_arr)
+    # MILP: min sum(x_j)
+    # s.t.  Av @ x >= demand   (cubrir demanda de cada tipo)
+    #       0 <= x_j <= max_sheets, x_j entero
+    c   = np.ones(nv)
+    con = LinearConstraint(Av, lb=np.array(demand, dtype=float), ub=np.inf)
+    bnd = Bounds(lb=0, ub=float(max_sheets))
     intg = np.ones(nv)
 
     res = milp(c, constraints=con, bounds=bnd, integrality=intg,
@@ -465,18 +439,20 @@ def solve(patterns_json, demand_json, max_sheets):
 
     if res.status not in (0, 1):
         return json.dumps({"status":"infeasible",
-            "message": f"Sin solución factible (status={res.status})"})
+            "message": f"Sin solución factible (status={res.status}). "
+                       f"Aumenta el máximo de láminas o revisa las dimensiones."})
 
-    x = np.round(res.x).astype(int)
-    used = [{"count": int(x[j]), "placements": pv[j]["placements"],
+    x    = np.round(res.x).astype(int)
+    used = [{"count": int(x[j]),
+             "placements": pv[j]["placements"],
              "piece_counts": pv[j]["counts"]}
             for j in range(nv) if x[j] > 0]
 
     return json.dumps({
-        "status":       "optimal" if res.status == 0 else "feasible",
-        "total_sheets": int(x.sum()),
+        "status":        "optimal" if res.status == 0 else "feasible",
+        "total_sheets":  int(x.sum()),
         "used_patterns": used,
-        "objective":    float(res.fun)
+        "objective":     float(res.fun)
     })
 
 result = solve(PATTERNS_JSON, DEMAND_JSON, MAX_SHEETS)
@@ -533,21 +509,25 @@ async function run(mode) {
       await sleep(20);
 
       const patterns = generatePatterns2D(sheetW, sheetH, kerf, state.pieces, allowRot);
-      setStatus(`✓ ${patterns.length} patrones (${Date.now()-t0}ms) → Resolviendo MILP…`);
+      const nPat = patterns.length;
+      setStatus(`✓ ${nPat} patrones (${Date.now()-t0}ms) → Resolviendo MILP…`);
       await sleep(50);
 
-      if (patterns.length === 0)
+      if (nPat === 0)
         return setStatus('Sin patrones factibles. Revisa dimensiones.', 'error');
+
+      // Bound seguro: suma total de todas las piezas (peor caso = 1 pieza por lámina)
+      const safeBound = state.pieces.reduce((a, p) => a + p.qty, 0);
 
       state.pyodide.globals.set('PATTERNS_JSON', JSON.stringify(patterns));
       state.pyodide.globals.set('DEMAND_JSON',   JSON.stringify(state.pieces.map(p => p.qty)));
-      state.pyodide.globals.set('MAX_SHEETS',    maxSh);
+      state.pyodide.globals.set('MAX_SHEETS',    safeBound);
 
       const resultStr = await state.pyodide.runPythonAsync(PYTHON_MILP);
       const result    = JSON.parse(resultStr);
 
       if (result.status === 'error' || result.status === 'infeasible')
-        return setStatus(`❌ ${result.message}`, 'error');
+        return setStatus(`❌ ${result.message} (${nPat} patrones generados)`, 'error');
 
       const dt = ((Date.now() - t0) / 1000).toFixed(1);
       setStatus(`✓ Óptimo global: ${result.total_sheets} láminas — ${dt}s`, 'ok');
