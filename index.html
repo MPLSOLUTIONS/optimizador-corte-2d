@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Optimizador de Corte 2D · MPL Solutions</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a class="logo" href="https://mplsolutions.github.io/" target="_blank" rel="noopener">
+      <div class="logo-icon">
+        <svg viewBox="0 0 18 18" fill="none">
+          <rect x="2" y="2" width="6" height="6" rx="1.5" fill="#0d1b2a"/>
+          <rect x="10" y="2" width="6" height="6" rx="1.5" fill="#0d1b2a"/>
+          <rect x="2" y="10" width="6" height="6" rx="1.5" fill="#0d1b2a"/>
+          <rect x="10" y="10" width="6" height="6" rx="1.5" fill="#0d1b2a"/>
+        </svg>
+      </div>
+      <div>
+        <span class="logo-text">MPL Solutions</span>
+        <span class="logo-sub">Optimizador de Corte 2D</span>
+      </div>
+    </a>
+    <div class="header-right">
+      <span class="solver-badge" id="solverBadge">
+        <span class="dot"></span><span id="solverStatus">Iniciando solver…</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">✦ Corte 2D · Empaquetado libre · Rotación 90°</div>
+    <h1>Optimizador de Corte <span>2D</span></h1>
+    <p>Minimiza el desperdicio en planchas, vidrio, madera y metales.<br>MILP + HiGHS vía Pyodide — <strong>óptimo global garantizado</strong>.</p>
+  </div>
+</div>
+<div class="divider"></div>
+
+<main>
+  <div class="layout">
+
+    <!-- LEFT: INPUTS -->
+    <aside class="panel-left">
+
+      <section class="card">
+        <h2 class="card-title">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          Lámina estándar
+        </h2>
+        <div class="field-row">
+          <div class="field">
+            <label>Ancho (mm)</label>
+            <input type="number" id="sheetW" value="2440" min="1" />
+          </div>
+          <div class="field">
+            <label>Alto (mm)</label>
+            <input type="number" id="sheetH" value="1220" min="1" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Kerf / sierra (mm)</label>
+            <input type="number" id="kerf" value="3" min="0" step="0.5" />
+          </div>
+          <div class="field">
+            <label>Máx. láminas</label>
+            <input type="number" id="maxSheets" value="20" min="1" max="100" />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 14L14 2M2 2l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Piezas a cortar
+        </h2>
+        <div class="field-row">
+          <div class="field">
+            <label>Ancho (mm)</label>
+            <input type="number" id="pieceW" placeholder="600" min="1" />
+          </div>
+          <div class="field">
+            <label>Alto (mm)</label>
+            <input type="number" id="pieceH" placeholder="400" min="1" />
+          </div>
+          <div class="field field-xs">
+            <label>Cant.</label>
+            <input type="number" id="pieceQty" value="1" min="1" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Etiqueta (opcional)</label>
+          <input type="text" id="pieceLabel" placeholder="Pieza A" maxlength="24" />
+        </div>
+        <button class="btn-add" id="btnAdd">+ Agregar pieza</button>
+        <div id="pieceList" class="piece-list"></div>
+      </section>
+
+      <section class="card card-options">
+        <label class="checkbox-row">
+          <input type="checkbox" id="allowRotation" checked />
+          <span>Permitir rotación 90°</span>
+        </label>
+      </section>
+
+      <button class="btn-solve" id="btnSolve">Optimizar cortes</button>
+      <div class="status-bar" id="statusBar"></div>
+
+    </aside>
+
+    <!-- RIGHT: RESULTS -->
+    <div class="panel-right">
+
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <rect x="4" y="4" width="56" height="56" rx="6" stroke="#d4dae4" stroke-width="2" stroke-dasharray="6 4"/>
+            <rect x="14" y="14" width="16" height="12" rx="2" fill="#e8f0fb"/>
+            <rect x="34" y="14" width="16" height="20" rx="2" fill="#fdf3e0"/>
+            <rect x="14" y="32" width="24" height="18" rx="2" fill="#e6f4ea"/>
+            <rect x="42" y="38" width="8" height="10" rx="2" fill="#f0eafa"/>
+          </svg>
+        </div>
+        <h3>Sin resultados aún</h3>
+        <p>Ingresa las piezas y presiona <strong>Optimizar cortes</strong></p>
+      </div>
+
+      <div id="resultsSection" class="hidden">
+
+        <div class="stats-bar">
+          <div class="stat">
+            <span class="stat-num" id="statSheets">—</span>
+            <span class="stat-label">Láminas usadas</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num" id="statEfficiency">—</span>
+            <span class="stat-label">Eficiencia</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num" id="statWaste">—</span>
+            <span class="stat-label">Desperdicio m²</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num" id="statPieces">—</span>
+            <span class="stat-label">Piezas totales</span>
+          </div>
+        </div>
+
+        <div class="canvas-section">
+          <div class="canvas-toolbar">
+            <div class="canvas-nav">
+              <button class="btn-icon" id="btnPrev" title="Anterior">‹</button>
+              <span id="sheetIndicator">Lámina 1 / 1</span>
+              <button class="btn-icon" id="btnNext" title="Siguiente">›</button>
+            </div>
+            <div class="canvas-zoom">
+              <button class="btn-icon" id="btnZoomOut" title="Alejar">−</button>
+              <span id="zoomLevel">100%</span>
+              <button class="btn-icon" id="btnZoomIn" title="Acercar">+</button>
+              <button class="btn-icon" id="btnZoomFit" title="Ajustar">⊞</button>
+            </div>
+          </div>
+          <div class="canvas-wrap" id="canvasWrap">
+            <canvas id="cutCanvas"></canvas>
+          </div>
+        </div>
+
+        <div class="results-bottom">
+          <div class="legend" id="legend"></div>
+          <div class="table-wrap">
+            <table class="result-table">
+              <thead>
+                <tr>
+                  <th>Pieza</th>
+                  <th>Dimensión</th>
+                  <th>Demanda</th>
+                  <th>Colocadas</th>
+                  <th>Rotadas</th>
+                </tr>
+              </thead>
+              <tbody id="resultTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <span class="footer-logo">MPL Solutions · Optimizador de Corte 2D</span>
+    <span class="footer-copy">MILP · HiGHS · Pyodide — Óptimo global garantizado · 2025</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
