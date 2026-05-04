@@ -290,12 +290,18 @@ const MAX_DEPTH    = 50;
 
 function generatePatterns2D(sheetW, sheetH, kerf, pieces, allowRotation) {
   const patterns = [];
-  const demand   = pieces.map(p => p.qty);
   const seen     = new Set();
 
-  // Maximal FÍSICO: ninguna pieza (de cualquier tipo) cabe en el espacio libre.
-  // No se limita por demanda — eso lo controla el MILP.
-  // Esto garantiza láminas completamente llenas antes de guardar el patrón.
+  // Cota razonable de cuántas veces puede aparecer cada pieza en UN patrón:
+  // como máximo, el área de la lámina dividido el área de la pieza
+  // (no usamos demanda — el MILP controla la demanda global)
+  const sheetArea = sheetW * sheetH;
+  const maxPerPattern = pieces.map(p => {
+    const ar = (p.w + kerf) * (p.h + kerf);
+    return Math.max(1, Math.floor(sheetArea / ar));
+  });
+
+  // Maximal FÍSICO: ninguna pieza cabe en el espacio libre
   function canPlacePhysically(freeRects) {
     for (const fr of freeRects) {
       for (const p of pieces) {
@@ -309,38 +315,42 @@ function generatePatterns2D(sheetW, sheetH, kerf, pieces, allowRotation) {
     return false;
   }
 
+  function savePattern(placements, counts) {
+    if (placements.length === 0) return;
+    // Firma canónica por counts (no por posiciones) para deduplicar
+    // patrones que tienen la misma composición pero distinta disposición
+    const sig = counts.join(',');
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    patterns.push({
+      placements: placements.map(p => ({ ...p })),
+      counts: [...counts]
+    });
+  }
+
   function dfs(freeRects, placements, counts, depth) {
     if (patterns.length >= MAX_PATTERNS) return;
 
-    // Patrón maximal físico: ninguna pieza más cabe físicamente
-    // O demanda satisfecha en todos los tipos ya colocados
-    const demandExhausted = counts.every((c, i) => c >= demand[i]);
-    const physicallyFull  = !canPlacePhysically(freeRects);
-    const isLeaf = physicallyFull || demandExhausted || depth >= MAX_DEPTH || freeRects.length === 0;
-
-    if (isLeaf) {
-      if (placements.length > 0) {
-        const sig = placements.map(pl =>
-          `${pl.pieceIdx},${pl.x},${pl.y},${pl.rotated ? 1 : 0}`
-        ).join('|');
-        if (!seen.has(sig)) {
-          seen.add(sig);
-          patterns.push({
-            placements: placements.map(p => ({ ...p })),
-            counts: [...counts]
-          });
-        }
-      }
+    // Si ninguna pieza más cabe físicamente, este patrón es maximal: guardarlo
+    if (!canPlacePhysically(freeRects)) {
+      savePattern(placements, counts);
       return;
     }
 
-    // Explorar: espacios libres de mayor a menor área
+    if (depth >= MAX_DEPTH || freeRects.length === 0) {
+      savePattern(placements, counts);
+      return;
+    }
+
+    // Explorar: espacios libres de mayor a menor área primero
     const sortedFR = [...freeRects].sort((a, b) => b.w * b.h - a.w * a.h);
     const tried    = new Set();
+    let expanded   = false;
 
     for (const fr of sortedFR) {
       for (let i = 0; i < pieces.length; i++) {
-        if (counts[i] >= demand[i]) continue; // respetar demanda al construir
+        // Cota física por patrón (no demanda)
+        if (counts[i] >= maxPerPattern[i]) continue;
         const p = pieces[i];
 
         const orientations = [{ pw: p.w + kerf, ph: p.h + kerf, rot: false }];
@@ -364,6 +374,7 @@ function generatePatterns2D(sheetW, sheetH, kerf, pieces, allowRotation) {
           }];
           const newCounts = [...counts];
           newCounts[i]++;
+          expanded = true;
 
           dfs(newFree, newPlacements, newCounts, depth + 1);
           if (patterns.length >= MAX_PATTERNS) return;
@@ -371,24 +382,45 @@ function generatePatterns2D(sheetW, sheetH, kerf, pieces, allowRotation) {
       }
     }
 
-    // Si llegamos aquí sin haber podido expandir (todas las piezas
-    // con demanda > 0 no caben aunque físicamente quede espacio),
-    // guardar el patrón actual como válido
-    if (placements.length > 0) {
-      const sig = placements.map(pl =>
-        `${pl.pieceIdx},${pl.x},${pl.y},${pl.rotated ? 1 : 0}`
-      ).join('|');
-      if (!seen.has(sig)) {
+    // Si no se pudo expandir aunque queda espacio (espacios muy pequeños),
+    // guardar el patrón actual
+    if (!expanded && placements.length > 0) {
+      savePattern(placements, counts);
+    }
+  }
+
+  // GENERADOR PRINCIPAL: enumera patrones empezando con
+  // cada tipo de pieza como "ancla" para diversidad
+  dfs([{ x:0, y:0, w:sheetW, h:sheetH }], [], new Array(pieces.length).fill(0), 0);
+
+  // GARANTÍA DE FACTIBILIDAD: agregar patrones triviales
+  // (uno por cada tipo de pieza, en posición 0,0). Esto asegura que
+  // SIEMPRE existe una solución factible: 1 lámina por pieza individual.
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    const sig = pieces.map((_, k) => k === i ? 1 : 0).join(',');
+    if (!seen.has(sig)) {
+      // ¿La pieza cabe sin rotación?
+      if (p.w + kerf <= sheetW + 0.001 && p.h + kerf <= sheetH + 0.001) {
+        const counts = new Array(pieces.length).fill(0);
+        counts[i] = 1;
         seen.add(sig);
         patterns.push({
-          placements: placements.map(p => ({ ...p })),
-          counts: [...counts]
+          placements: [{ pieceIdx: i, x: 0, y: 0, w: p.w, h: p.h, rotated: false }],
+          counts
+        });
+      } else if (allowRotation && p.h + kerf <= sheetW + 0.001 && p.w + kerf <= sheetH + 0.001) {
+        const counts = new Array(pieces.length).fill(0);
+        counts[i] = 1;
+        seen.add(sig);
+        patterns.push({
+          placements: [{ pieceIdx: i, x: 0, y: 0, w: p.h, h: p.w, rotated: true }],
+          counts
         });
       }
     }
   }
 
-  dfs([{ x:0, y:0, w:sheetW, h:sheetH }], [], new Array(pieces.length).fill(0), 0);
   return patterns;
 }
 
@@ -415,16 +447,14 @@ def solve(patterns_json, demand_json, max_sheets):
         for i, cnt in enumerate(pat["counts"]):
             A[i, j] = cnt
 
-    # Filtrar patrones que excedan la demanda en algún tipo
-    # (no tiene sentido usar un patrón que pide más de lo que necesitamos)
-    valid = [j for j in range(n_patterns)
-             if all(A[i,j] <= demand[i] for i in range(n_pieces))]
-    if not valid:
-        valid = list(range(n_patterns))
-
-    Av = A[:, valid]
-    pv = [patterns[j] for j in valid]
-    nv = len(valid)
+    # NO filtramos patrones que "excedan" demanda: el MILP usa
+    # restricción >= demand (no == demand). Un patrón con más piezas
+    # de las necesarias simplemente cubre la demanda con menos láminas
+    # y deja material sobrante (waste), que es exactamente lo que
+    # queremos minimizar al minimizar #láminas.
+    Av = A
+    pv = patterns
+    nv = n_patterns
 
     # MILP: min sum(x_j)
     # s.t.  Av @ x >= demand   (cubrir demanda de cada tipo)
